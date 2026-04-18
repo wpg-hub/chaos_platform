@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: chaos_postgres
+    environment:
+      POSTGRES_USER: chaos
+      POSTGRES_PASSWORD: chaos123
+      POSTGRES_DB: chaos_platform
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - chaos_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chaos"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: chaos_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - chaos_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: chaos_backend
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://chaos:chaos123@postgres:5432/chaos_platform
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - DEBUG=false
+    volumes:
+      - ./chaos:/app/chaos:ro
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+      - ./cases:/app/cases:ro
+      - ./config.yaml:/app/config.yaml:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chaos_network
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: chaos_celery_worker
+    command: celery -A app.tasks worker --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://chaos:chaos123@postgres:5432/chaos_platform
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+    volumes:
+      - ./chaos:/app/chaos:ro
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+      - ./cases:/app/cases:ro
+      - ./config.yaml:/app/config.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chaos_network
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: chaos_celery_beat
+    command: celery -A app.tasks beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://chaos:chaos123@postgres:5432/chaos_platform
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chaos_network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: chaos_frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    networks:
+      - chaos_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  chaos_network:
+    driver: bridge

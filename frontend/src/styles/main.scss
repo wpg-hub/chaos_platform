@@ -1,0 +1,72 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #app {
+  height: 100%;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+}
+
+.el-menu {
+  border-right: none !important;
+}
+
+.el-aside {
+  transition: width 0.3s;
+}
+
+.log-viewer {
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+  padding: 16px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow: auto;
+  max-height: 600px;
+  
+  .log-info {
+    color: #4ec9b0;
+  }
+  
+  .log-warning {
+    color: #dcdcaa;
+  }
+  
+  .log-error {
+    color: #f14c4c;
+  }
+  
+  .log-timestamp {
+    color: #6a9955;
+    margin-right: 8px;
+  }
+}
+
+.yaml-editor {
+  height: 400px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.status-badge {
+  &.success {
+    color: #67c23a;
+  }
+  &.failed {
+    color: #f56c6c;
+  }
+  &.running {
+    color: #409eff;
+  }
+  &.pending {
+    color: #909399;
+  }
+  &.cancelled {
+    color: #e6a23c;
+  }
+}
