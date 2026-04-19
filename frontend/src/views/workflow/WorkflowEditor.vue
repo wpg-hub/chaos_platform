@@ -59,6 +59,7 @@
             @node-click="handleNodeClick"
             @node-contextmenu="handleContextMenu"
             @node-drop="handleDrop"
+            @node-drag-start="handleNodeDragStart"
           >
             <template #default="{ node, data }">
               <div class="tree-node" :class="{ 'is-folder': data.type === 'folder' }">
@@ -332,6 +333,50 @@
         <ContextMenuItem :divided="true" @click="deleteCaseItem">删除</ContextMenuItem>
       </template>
     </ContextMenu>
+    
+    <el-drawer
+      v-model="showCaseDetail"
+      :title="selectedCase?.name || '用例详情'"
+      direction="rtl"
+      size="50%"
+    >
+      <template v-if="selectedCase">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="名称">{{ selectedCase.name }}</el-descriptions-item>
+          <el-descriptions-item label="类型">
+            <el-tag :type="selectedCase.case_type === 'workflow' ? 'success' : 'info'">
+              {{ selectedCase.case_type === 'workflow' ? '工作流' : '用例' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="描述">{{ selectedCase.description || '无' }}</el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ selectedCase.created_at }}</el-descriptions-item>
+          <el-descriptions-item label="标签">
+            <el-tag v-for="tag in selectedCase.tags" :key="tag.id" size="small" style="margin-right: 4px">
+              {{ tag.name }}
+            </el-tag>
+            <span v-if="!selectedCase.tags?.length">无</span>
+          </el-descriptions-item>
+        </el-descriptions>
+        
+        <div style="margin-top: 16px">
+          <div style="margin-bottom: 8px; font-weight: bold">YAML 内容</div>
+          <div class="yaml-editor-detail">
+            <vue-monaco-editor
+              :key="selectedCase?.id"
+              v-model:value="selectedCase.yaml_content"
+              language="yaml"
+              :options="{ ...editorOptions, readOnly: true }"
+            />
+          </div>
+        </div>
+        
+        <div style="margin-top: 16px">
+          <el-button type="primary" @click="editSelectedCase">编辑</el-button>
+          <el-button type="success" @click="executeSelectedCase" :loading="executing">执行</el-button>
+          <el-button @click="copySelectedCase">复制</el-button>
+        </div>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -381,6 +426,8 @@ const cases = ref<CaseResponse[]>([])
 const loading = ref(false)
 const searchKeyword = ref('')
 const selectedFolderId = ref<number | null>(null)
+const selectedCase = ref<CaseResponse | null>(null)
+const showCaseDetail = ref(false)
 
 const nodes = ref<Node[]>([])
 const edges = ref<Edge[]>([])
@@ -489,16 +536,20 @@ function buildFolderNode(folder: FolderResponse): TreeNode {
 }
 
 const treeData = computed<TreeNode[]>(() => {
+  console.log('Computing treeData, cases:', cases.value)
   const folderNodes: TreeNode[] = folders.value.map(f => buildFolderNode(f))
   
-  const caseNodes: TreeNode[] = cases.value.map(c => ({
-    id: `case_${c.id}`,
-    label: c.name,
-    type: 'case' as const,
-    case_type: c.case_type || 'case',
-    parent_id: c.folder_id,
-    data: c
-  }))
+  const caseNodes: TreeNode[] = cases.value.map(c => {
+    console.log('Creating caseNode for:', c.id, c.name, 'data:', c)
+    return {
+      id: `case_${c.id}`,
+      label: c.name,
+      type: 'case' as const,
+      case_type: c.case_type || 'case',
+      parent_id: c.folder_id,
+      data: c
+    }
+  })
   
   const folderMap = new Map<string, TreeNode>()
   function collectFolders(nodes: TreeNode[]) {
@@ -523,6 +574,7 @@ const treeData = computed<TreeNode[]>(() => {
     }
   })
   
+  console.log('Final treeData:', folderNodes)
   return folderNodes
 })
 
@@ -614,9 +666,66 @@ function handleNewCommand(command: string) {
   }
 }
 
-function handleNodeClick(data: TreeNode) {
+function handleNodeClick(data: TreeNode, _node: any) {
+  console.log('handleNodeClick data:', data)
   if (data.type === 'folder') {
     selectedFolderId.value = Number(data.id.toString().replace('folder_', ''))
+  } else if (data.type === 'case' && data.data) {
+    console.log('Setting selectedCase:', data.data)
+    selectedCase.value = data.data as CaseResponse
+    showCaseDetail.value = true
+  }
+}
+
+function editSelectedCase() {
+  console.log('editSelectedCase called, selectedCase:', selectedCase.value)
+  if (!selectedCase.value) return
+  const caseId = selectedCase.value.id
+  console.log('caseId:', caseId)
+  if (!caseId) {
+    ElMessage.error('用例ID无效')
+    return
+  }
+  caseDialogTitle.value = '编辑用例'
+  caseForm.name = selectedCase.value.name
+  caseForm.description = selectedCase.value.description || ''
+  caseForm.yaml_content = selectedCase.value.yaml_content
+  caseForm.case_type = (selectedCase.value.case_type as 'case' | 'workflow') || 'case'
+  caseForm.folder_id = selectedCase.value.folder_id ?? undefined
+  currentCaseId.value = caseId
+  console.log('currentCaseId set to:', currentCaseId.value)
+  showCaseDetail.value = false
+  showCaseDialog.value = true
+}
+
+async function executeSelectedCase() {
+  if (!selectedCase.value) return
+  try {
+    executing.value = true
+    const result = await executionApi.create({
+      case_id: selectedCase.value.id
+    })
+    ElMessage.success('执行已启动')
+    showCaseDetail.value = false
+    router.push(`/executions/${result.id}`)
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { detail?: string } } }
+    ElMessage.error(err.response?.data?.detail || '执行失败')
+  } finally {
+    executing.value = false
+  }
+}
+
+async function copySelectedCase() {
+  if (!selectedCase.value) return
+  try {
+    await caseApi.copy(selectedCase.value.id, { name: `${selectedCase.value.name} - 副本` })
+    ElMessage.success('复制成功')
+    showCaseDetail.value = false
+    loadData()
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { detail?: string } } }
+    ElMessage.error(err.response?.data?.detail || '复制失败')
   }
 }
 
@@ -741,6 +850,7 @@ async function deleteCaseItem() {
 }
 
 async function saveCase() {
+  console.log('saveCase called, currentCaseId:', currentCaseId.value)
   if (!caseForm.name.trim()) {
     ElMessage.warning('请输入名称')
     return
@@ -749,10 +859,12 @@ async function saveCase() {
   savingCase.value = true
   try {
     if (currentCaseId.value) {
+      console.log('Updating case:', currentCaseId.value)
       await caseApi.update(currentCaseId.value, {
         name: caseForm.name,
         description: caseForm.description,
         yaml_content: caseForm.yaml_content,
+        case_type: caseForm.case_type,
         folder_id: caseForm.folder_id || undefined
       })
       ElMessage.success('更新成功')
@@ -814,6 +926,26 @@ async function handleDrop(draggingNode: any, dropNode: any, dropType: string) {
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } } }
     ElMessage.error(err.response?.data?.detail || '移动失败')
+  }
+}
+
+function handleNodeDragStart(node: any, ev: DragEvent) {
+  const data = node.data as TreeNode
+  if (data.type !== 'case' || !data.data) return
+  
+  const caseData = data.data as CaseResponse
+  if (ev.dataTransfer) {
+    ev.dataTransfer.setData('application/vueflow', JSON.stringify({
+      type: caseData.case_type === 'workflow' ? 'workflow' : 'case',
+      data: {
+        caseId: caseData.id,
+        label: caseData.name,
+        yaml_content: caseData.yaml_content,
+        onFailure: 'stop',
+        timeout: 0
+      }
+    }))
+    ev.dataTransfer.effectAllowed = 'move'
   }
 }
 
@@ -1314,6 +1446,14 @@ onMounted(() => {
 .yaml-editor-dialog {
   width: 100%;
   height: 400px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.yaml-editor-detail {
+  width: 100%;
+  height: 300px;
   border: 1px solid #dcdfe6;
   border-radius: 4px;
   overflow: hidden;

@@ -74,6 +74,7 @@ export interface CaseUpdate {
   name?: string
   description?: string
   yaml_content?: string
+  case_type?: string
   folder_id?: number
   is_template?: boolean
   tags?: string[]

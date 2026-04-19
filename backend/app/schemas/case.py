@@ -64,6 +64,7 @@ class CaseUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     yaml_content: Optional[str] = None
+    case_type: Optional[str] = None
     folder_id: Optional[int] = None
     is_template: Optional[bool] = None
     tags: Optional[List[str]] = None

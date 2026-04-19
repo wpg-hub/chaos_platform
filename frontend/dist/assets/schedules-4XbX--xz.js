@@ -1,0 +1,1 @@
+import{a9 as t}from"./index-Bi1nncfo.js";const u={getList(e){return t.get("/schedules",{params:e})},get(e){return t.get(`/schedules/${e}`)},create(e){return t.post("/schedules",e)},update(e,s){return t.put(`/schedules/${e}`,s)},toggle(e){return t.post(`/schedules/${e}/toggle`)},delete(e){return t.delete(`/schedules/${e}`)}};export{u as s};
